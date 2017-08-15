@@ -23,10 +23,10 @@ For example, consider below sample:
 >>> x = np.uint8([250])
 >>> y = np.uint8([10])
 
->>> print cv2.add(x,y) # 250+10 = 260 => 255
+>>> print( cv2.add(x,y) ) # 250+10 = 260 => 255
 [[255]]
 
->>> print x+y          # 250+10 = 260 % 256 = 4
+>>> print( x+y )          # 250+10 = 260 % 256 = 4
 [4]
 @endcode
 It will be more visible when you add two images. OpenCV function will provide a better result. So
@@ -51,7 +51,7 @@ is given 0.3. cv2.addWeighted() applies following equation on the image.
 Here \f$\gamma\f$ is taken as zero.
 @code{.py}
 img1 = cv2.imread('ml.png')
-img2 = cv2.imread('opencv_logo.jpg')
+img2 = cv2.imread('opencv-logo.png')
 
 dst = cv2.addWeighted(img1,0.7,img2,0.3,0)
 
@@ -77,7 +77,7 @@ bitwise operations as below:
 @code{.py}
 # Load two images
 img1 = cv2.imread('messi5.jpg')
-img2 = cv2.imread('opencv_logo.png')
+img2 = cv2.imread('opencv-logo.png')
 
 # I want to put logo on top-left corner, So I create a ROI
 rows,cols,channels = img2.shape

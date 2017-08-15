@@ -1,14 +1,15 @@
-#ifndef __OPENCV_TS_PERF_HPP__
-#define __OPENCV_TS_PERF_HPP__
+#ifndef OPENCV_TS_PERF_HPP
+#define OPENCV_TS_PERF_HPP
 
-#include "opencv2/core.hpp"
+#include "opencv2/ts.hpp"
+
 #include "ts_gtest.h"
 #include "ts_ext.hpp"
 
 #include <functional>
 
 #if !(defined(LOGD) || defined(LOGI) || defined(LOGW) || defined(LOGE))
-# if defined(ANDROID) && defined(USE_ANDROID_LOGGING)
+# if defined(__ANDROID__) && defined(USE_ANDROID_LOGGING)
 #  include <android/log.h>
 
 #  define PERF_TESTS_LOG_TAG "OpenCV_perf"
@@ -95,11 +96,11 @@ private:
 
 #define CV_ENUM(class_name, ...)                                                        \
     namespace {                                                                         \
+    using namespace cv;using namespace cv::cuda; using namespace cv::ocl;               \
     struct class_name {                                                                 \
         class_name(int val = 0) : val_(val) {}                                          \
         operator int() const { return val_; }                                           \
         void PrintTo(std::ostream* os) const {                                          \
-            using namespace cv;using namespace cv::cuda; using namespace cv::ocl;        \
             const int vals[] = { __VA_ARGS__ };                                         \
             const char* svals = #__VA_ARGS__;                                           \
             for(int i = 0, pos = 0; i < (int)(sizeof(vals)/sizeof(int)); ++i) {         \
@@ -115,13 +116,12 @@ private:
             *os << "UNKNOWN";                                                           \
         }                                                                               \
         static ::testing::internal::ParamGenerator<class_name> all() {                  \
-            using namespace cv;using namespace cv::cuda; using namespace cv::ocl;        \
-            static class_name vals[] = { __VA_ARGS__ };                                 \
+            const class_name vals[] = { __VA_ARGS__ };                                  \
             return ::testing::ValuesIn(vals);                                           \
         }                                                                               \
     private: int val_;                                                                  \
     };                                                                                  \
-    inline void PrintTo(const class_name& t, std::ostream* os) { t.PrintTo(os); } }
+    static inline void PrintTo(const class_name& t, std::ostream* os) { t.PrintTo(os); } }
 
 #define CV_FLAGS(class_name, ...)                                                       \
     namespace {                                                                         \
@@ -150,7 +150,7 @@ private:
         }                                                                               \
     private: int val_;                                                                  \
     };                                                                                  \
-    inline void PrintTo(const class_name& t, std::ostream* os) { t.PrintTo(os); } }
+    static inline void PrintTo(const class_name& t, std::ostream* os) { t.PrintTo(os); } }
 
 CV_ENUM(MatDepth, CV_8U, CV_8S, CV_16U, CV_16S, CV_32S, CV_32F, CV_64F, CV_USRTYPE1)
 
@@ -354,6 +354,15 @@ typedef struct ImplData
 } ImplData;
 #endif
 
+#ifdef ENABLE_INSTRUMENTATION
+class InstumentData
+{
+public:
+    static ::cv::String treeToString();
+    static void         printTree();
+};
+#endif
+
 class CV_EXPORTS TestBase: public ::testing::Test
 {
 public:
@@ -371,8 +380,8 @@ public:
 
     class PerfSkipTestException: public cv::Exception
     {
-        int dummy; // workaround for MacOSX Xcode 7.3 bug (don't make class "empty")
     public:
+        int dummy; // workaround for MacOSX Xcode 7.3 bug (don't make class "empty")
         PerfSkipTestException() : dummy(0) {}
     };
 
@@ -382,7 +391,7 @@ protected:
     virtual void SetUp();
     virtual void TearDown();
 
-    void startTimer();
+    bool startTimer(); // bool is dummy for conditional loop
     void stopTimer();
     bool next();
 
@@ -406,6 +415,10 @@ protected:
 #ifdef CV_COLLECT_IMPL_DATA
     ImplData implConf;
 #endif
+#ifdef ENABLE_INSTRUMENTATION
+    InstumentData instrConf;
+#endif
+
 private:
     typedef std::vector<std::pair<int, cv::Size> > SizeVector;
     typedef std::vector<int64> TimeVector;
@@ -525,7 +538,7 @@ CV_EXPORTS void PrintTo(const Size& sz, ::std::ostream* os);
       protected:\
        virtual void PerfTestBody();\
      };\
-     TEST_F(test_case_name, test_name){ RunPerfTestBody(); }\
+     TEST_F(test_case_name, test_name){ CV_TRACE_REGION("PERF_TEST: " #test_case_name "_" #test_name); RunPerfTestBody(); }\
     }\
     void PERF_PROXY_NAMESPACE_NAME_(test_case_name, test_name)::test_case_name::PerfTestBody()
 
@@ -563,7 +576,7 @@ CV_EXPORTS void PrintTo(const Size& sz, ::std::ostream* os);
       protected:\
        virtual void PerfTestBody();\
      };\
-     TEST_F(fixture, testname){ RunPerfTestBody(); }\
+     TEST_F(fixture, testname){ CV_TRACE_REGION("PERF_TEST: " #fixture "_" #testname); RunPerfTestBody(); }\
     }\
     void PERF_PROXY_NAMESPACE_NAME_(fixture, testname)::fixture::PerfTestBody()
 
@@ -596,7 +609,7 @@ CV_EXPORTS void PrintTo(const Size& sz, ::std::ostream* os);
      protected:\
       virtual void PerfTestBody();\
     };\
-    TEST_P(fixture##_##name, name /*perf*/){ RunPerfTestBody(); }\
+    TEST_P(fixture##_##name, name /*perf*/){ CV_TRACE_REGION("PERF_TEST: " #fixture "_" #name); RunPerfTestBody(); }\
     INSTANTIATE_TEST_CASE_P(/*none*/, fixture##_##name, params);\
     void fixture##_##name::PerfTestBody()
 
@@ -619,7 +632,10 @@ void dumpOpenCLDevice();
 #define TEST_DUMP_OCL_INFO
 #endif
 
+
 #define CV_PERF_TEST_MAIN_INTERNALS(modulename, impls, ...)	\
+    CV_TRACE_FUNCTION(); \
+    { CV_TRACE_REGION("INIT"); \
     ::perf::Regression::Init(#modulename); \
     ::perf::TestBase::Init(std::vector<std::string>(impls, impls + sizeof impls / sizeof *impls), \
                            argc, argv); \
@@ -629,6 +645,7 @@ void dumpOpenCLDevice();
     ::perf::TestBase::RecordRunParameters(); \
     __CV_TEST_EXEC_ARGS(__VA_ARGS__) \
     TEST_DUMP_OCL_INFO \
+    } \
     return RUN_ALL_TESTS();
 
 // impls must be an array, not a pointer; "plain" should always be one of the implementations
@@ -645,9 +662,19 @@ int main(int argc, char **argv)\
     CV_PERF_TEST_MAIN_INTERNALS(modulename, plain_only, __VA_ARGS__)\
 }
 
-#define TEST_CYCLE_N(n) for(declare.iterations(n); startTimer(), next(); stopTimer())
-#define TEST_CYCLE() for(; startTimer(), next(); stopTimer())
-#define TEST_CYCLE_MULTIRUN(runsNum) for(declare.runs(runsNum); startTimer(), next(); stopTimer()) for(int r = 0; r < runsNum; ++r)
+//! deprecated
+#define TEST_CYCLE_N(n) for(declare.iterations(n); next() && startTimer(); stopTimer())
+//! deprecated
+#define TEST_CYCLE() for(; next() && startTimer(); stopTimer())
+//! deprecated
+#define TEST_CYCLE_MULTIRUN(runsNum) for(declare.runs(runsNum); next() && startTimer(); stopTimer()) for(int r = 0; r < runsNum; ++r)
+
+#define PERF_SAMPLE_BEGIN() \
+    for(; next() && startTimer(); stopTimer()) \
+    { \
+        CV_TRACE_REGION("iteration");
+#define PERF_SAMPLE_END() \
+    }
 
 namespace perf
 {
@@ -691,4 +718,4 @@ struct CV_EXPORTS KeypointGreater :
 void CV_EXPORTS sort(std::vector<cv::KeyPoint>& pts, cv::InputOutputArray descriptors);
 } //namespace perf
 
-#endif //__OPENCV_TS_PERF_HPP__
+#endif //OPENCV_TS_PERF_HPP

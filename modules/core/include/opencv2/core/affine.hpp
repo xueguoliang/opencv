@@ -41,8 +41,8 @@
 //
 //M*/
 
-#ifndef __OPENCV_CORE_AFFINE3_HPP__
-#define __OPENCV_CORE_AFFINE3_HPP__
+#ifndef OPENCV_CORE_AFFINE3_HPP
+#define OPENCV_CORE_AFFINE3_HPP
 
 #ifdef __cplusplus
 
@@ -213,11 +213,13 @@ cv::Affine3<T>::Affine3(const cv::Mat& data, const Vec3& t)
     {
         rotation(data(Rect(0, 0, 3, 3)));
         translation(data(Rect(3, 0, 1, 3)));
-        return;
+    }
+    else
+    {
+        rotation(data);
+        translation(t);
     }
 
-    rotation(data);
-    translation(t);
     matrix.val[12] = matrix.val[13] = matrix.val[14] = 0;
     matrix.val[15] = 1;
 }
@@ -514,4 +516,4 @@ cv::Affine3<T>::operator Eigen::Transform<T, 3, Eigen::Affine>() const
 
 #endif /* __cplusplus */
 
-#endif /* __OPENCV_CORE_AFFINE3_HPP__ */
+#endif /* OPENCV_CORE_AFFINE3_HPP */

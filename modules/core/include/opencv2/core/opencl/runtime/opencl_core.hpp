@@ -39,8 +39,8 @@
 //
 //M*/
 
-#ifndef __OPENCV_CORE_OCL_RUNTIME_OPENCL_CORE_HPP__
-#define __OPENCV_CORE_OCL_RUNTIME_OPENCL_CORE_HPP__
+#ifndef OPENCV_CORE_OCL_RUNTIME_OPENCL_CORE_HPP
+#define OPENCV_CORE_OCL_RUNTIME_OPENCL_CORE_HPP
 
 #ifdef HAVE_OPENCL
 
@@ -55,7 +55,7 @@
 #else // HAVE_OPENCL_STATIC
 
 #ifndef CL_RUNTIME_EXPORT
-#if (defined(BUILD_SHARED_LIBS) || defined(OPENCV_CORE_SHARED)) && (defined WIN32 || defined _WIN32 || defined WINCE)
+#if (defined(BUILD_SHARED_LIBS) || defined(OPENCV_CORE_SHARED)) && (defined _WIN32 || defined WINCE)
 #define CL_RUNTIME_EXPORT __declspec(dllimport)
 #else
 #define CL_RUNTIME_EXPORT
@@ -92,4 +92,4 @@
 
 #endif // HAVE_OPENCL
 
-#endif // __OPENCV_CORE_OCL_RUNTIME_OPENCL_CORE_HPP__
+#endif // OPENCV_CORE_OCL_RUNTIME_OPENCL_CORE_HPP

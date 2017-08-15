@@ -24,17 +24,24 @@ foreach(m ${OPENCV_MODULES_BUILD})
 endforeach()
 
 set(opencv_hdrs "")
+set(opencv_userdef_hdrs "")
 foreach(m ${OPENCV_PYTHON_MODULES})
   list(APPEND opencv_hdrs ${OPENCV_MODULE_${m}_HEADERS})
+  file(GLOB userdef_hdrs ${OPENCV_MODULE_${m}_LOCATION}/misc/python/pyopencv*.hpp)
+  list(APPEND opencv_userdef_hdrs ${userdef_hdrs})
 endforeach(m)
 
 # header blacklist
-ocv_list_filterout(opencv_hdrs "modules/.*.h$")
+ocv_list_filterout(opencv_hdrs "modules/.*\\\\.h$")
 ocv_list_filterout(opencv_hdrs "modules/core/.*/cuda")
 ocv_list_filterout(opencv_hdrs "modules/cuda.*")
 ocv_list_filterout(opencv_hdrs "modules/cudev")
 ocv_list_filterout(opencv_hdrs "modules/core/.*/hal/")
-ocv_list_filterout(opencv_hdrs "modules/.*/detection_based_tracker.hpp") # Conditional compilation
+ocv_list_filterout(opencv_hdrs "modules/.+/utils/.*")
+ocv_list_filterout(opencv_hdrs "modules/.*\\\\.inl\\\\.h*")
+ocv_list_filterout(opencv_hdrs "modules/.*_inl\\\\.h*")
+ocv_list_filterout(opencv_hdrs "modules/.*\\\\.details\\\\.h*")
+ocv_list_filterout(opencv_hdrs "modules/.*/detection_based_tracker\\\\.hpp") # Conditional compilation
 
 set(cv2_generated_hdrs
     "${CMAKE_CURRENT_BINARY_DIR}/pyopencv_generated_include.h"
@@ -43,7 +50,8 @@ set(cv2_generated_hdrs
     "${CMAKE_CURRENT_BINARY_DIR}/pyopencv_generated_type_reg.h"
     "${CMAKE_CURRENT_BINARY_DIR}/pyopencv_generated_ns_reg.h")
 
-file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/headers.txt" "${opencv_hdrs}")
+string(REPLACE ";" "\n" opencv_hdrs_ "${opencv_hdrs}")
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/headers.txt" "${opencv_hdrs_}")
 add_custom_command(
    OUTPUT ${cv2_generated_hdrs}
    COMMAND ${PYTHON_DEFAULT_EXECUTABLE} "${PYTHON_SOURCE_DIR}/src2/gen2.py" ${CMAKE_CURRENT_BINARY_DIR} "${CMAKE_CURRENT_BINARY_DIR}/headers.txt" "${PYTHON}"
@@ -52,7 +60,13 @@ add_custom_command(
    DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/headers.txt
    DEPENDS ${opencv_hdrs})
 
-ocv_add_library(${the_module} MODULE ${PYTHON_SOURCE_DIR}/src2/cv2.cpp ${cv2_generated_hdrs})
+set(cv2_custom_hdr "${CMAKE_CURRENT_BINARY_DIR}/pyopencv_custom_headers.h")
+file(WRITE ${cv2_custom_hdr} "//user-defined headers\n")
+foreach(uh ${opencv_userdef_hdrs})
+    file(APPEND ${cv2_custom_hdr} "#include \"${uh}\"\n")
+endforeach(uh)
+
+ocv_add_library(${the_module} MODULE ${PYTHON_SOURCE_DIR}/src2/cv2.cpp ${cv2_generated_hdrs} ${opencv_userdef_hdrs} ${cv2_custom_hdr})
 
 if(APPLE)
   set_target_properties(${the_module} PROPERTIES LINK_FLAGS "-undefined dynamic_lookup")
@@ -103,6 +117,8 @@ if(MSVC AND NOT ENABLE_NOISY_WARNINGS)
   string(REPLACE "/W4" "/W3" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
 endif()
 
+ocv_warnings_disable(CMAKE_CXX_FLAGS -Woverloaded-virtual -Wunused-private-field)
+
 if(MSVC AND NOT BUILD_SHARED_LIBS)
   set_target_properties(${the_module} PROPERTIES LINK_FLAGS "/NODEFAULTLIB:atlthunk.lib /NODEFAULTLIB:atlsd.lib /DEBUG")
 endif()
@@ -121,13 +137,8 @@ endif()
 
 if(NOT INSTALL_CREATE_DISTRIB AND DEFINED ${PYTHON}_PACKAGES_PATH)
   set(__dst "${${PYTHON}_PACKAGES_PATH}")
-  install(TARGETS ${the_module} OPTIONAL
-          ${PYTHON_INSTALL_CONFIGURATIONS}
-          RUNTIME DESTINATION "${__dst}" COMPONENT python
-          LIBRARY DESTINATION "${__dst}" COMPONENT python
-          ${PYTHON_INSTALL_ARCHIVE}
-          )
-else()
+endif()
+if(NOT __dst)
   if(DEFINED ${PYTHON}_VERSION_MAJOR)
     set(__ver "${${PYTHON}_VERSION_MAJOR}.${${PYTHON}_VERSION_MINOR}")
   elseif(DEFINED ${PYTHON}_VERSION_STRING)
@@ -135,12 +146,19 @@ else()
   else()
     set(__ver "unknown")
   endif()
-  install(TARGETS ${the_module}
-          CONFIGURATIONS Release
-          RUNTIME DESTINATION python/${__ver}/${OpenCV_ARCH} COMPONENT python
-          LIBRARY DESTINATION python/${__ver}/${OpenCV_ARCH} COMPONENT python
-          )
+  if(INSTALL_CREATE_DISTRIB)
+    set(__dst "python/${__ver}/${OpenCV_ARCH}")
+  else()
+    set(__dst "python/${__ver}")
+  endif()
 endif()
+
+install(TARGETS ${the_module}
+        ${PYTHON_INSTALL_CONFIGURATIONS}
+        RUNTIME DESTINATION "${__dst}" COMPONENT python
+        LIBRARY DESTINATION "${__dst}" COMPONENT python
+        ${PYTHON_INSTALL_ARCHIVE}
+        )
 
 unset(PYTHON_SRC_DIR)
 unset(PYTHON_CVPY_PROCESS)

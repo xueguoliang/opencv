@@ -1,4 +1,5 @@
 #include "test_precomp.hpp"
+#include <cmath>
 
 using namespace cv;
 using namespace std;
@@ -737,6 +738,62 @@ struct ConvertScaleOp : public BaseElemWiseOp
     int ddepth;
 };
 
+struct ConvertScaleFp16Op : public BaseElemWiseOp
+{
+    ConvertScaleFp16Op() : BaseElemWiseOp(1, FIX_BETA+REAL_GAMMA, 1, 1, Scalar::all(0)), nextRange(0) { }
+    void op(const vector<Mat>& src, Mat& dst, const Mat&)
+    {
+        Mat m;
+        convertFp16(src[0], m);
+        convertFp16(m, dst);
+    }
+    void refop(const vector<Mat>& src, Mat& dst, const Mat&)
+    {
+        cvtest::copy(src[0], dst);
+    }
+    int getRandomType(RNG&)
+    {
+        // 0: FP32 -> FP16 -> FP32
+        // 1: FP16 -> FP32 -> FP16
+        int srctype = (nextRange & 1) == 0 ? CV_32F : CV_16S;
+        return srctype;
+    }
+    void getValueRange(int, double& minval, double& maxval)
+    {
+        // 0: FP32 -> FP16 -> FP32
+        // 1: FP16 -> FP32 -> FP16
+        if( (nextRange & 1) == 0 )
+        {
+            // largest integer number that fp16 can express exactly
+            maxval = 2048.f;
+            minval = -maxval;
+        }
+        else
+        {
+            // 0: positive number range
+            // 1: negative number range
+            if( (nextRange & 2) == 0 )
+            {
+                minval = 0;      // 0x0000 +0
+                maxval = 31744;  // 0x7C00 +Inf
+            }
+            else
+            {
+                minval = -32768; // 0x8000 -0
+                maxval = -1024;  // 0xFC00 -Inf
+            }
+        }
+    }
+    double getMaxErr(int)
+    {
+        return 0.5f;
+    }
+    void generateScalars(int, RNG& rng)
+    {
+        nextRange = rng.next();
+    }
+    int nextRange;
+};
 
 struct ConvertScaleAbsOp : public BaseElemWiseOp
 {
@@ -1371,6 +1428,7 @@ INSTANTIATE_TEST_CASE_P(Core_Copy, ElemWiseTest, ::testing::Values(ElemWiseOpPtr
 INSTANTIATE_TEST_CASE_P(Core_Set, ElemWiseTest, ::testing::Values(ElemWiseOpPtr(new cvtest::SetOp)));
 INSTANTIATE_TEST_CASE_P(Core_SetZero, ElemWiseTest, ::testing::Values(ElemWiseOpPtr(new cvtest::SetZeroOp)));
 INSTANTIATE_TEST_CASE_P(Core_ConvertScale, ElemWiseTest, ::testing::Values(ElemWiseOpPtr(new cvtest::ConvertScaleOp)));
+INSTANTIATE_TEST_CASE_P(Core_ConvertScaleFp16, ElemWiseTest, ::testing::Values(ElemWiseOpPtr(new cvtest::ConvertScaleFp16Op)));
 INSTANTIATE_TEST_CASE_P(Core_ConvertScaleAbs, ElemWiseTest, ::testing::Values(ElemWiseOpPtr(new cvtest::ConvertScaleAbsOp)));
 
 INSTANTIATE_TEST_CASE_P(Core_Add, ElemWiseTest, ::testing::Values(ElemWiseOpPtr(new cvtest::AddOp)));
@@ -1423,35 +1481,26 @@ INSTANTIATE_TEST_CASE_P(Core_MinMaxLoc, ElemWiseTest, ::testing::Values(ElemWise
 INSTANTIATE_TEST_CASE_P(Core_CartToPolarToCart, ElemWiseTest, ::testing::Values(ElemWiseOpPtr(new cvtest::CartToPolarToCartOp)));
 
 
-class CV_ArithmMaskTest : public cvtest::BaseTest
+TEST(Core_ArithmMask, uninitialized)
 {
-public:
-    CV_ArithmMaskTest() {}
-    ~CV_ArithmMaskTest() {}
-protected:
-    void run(int)
-    {
-        try
-        {
             RNG& rng = theRNG();
             const int MAX_DIM=3;
             int sizes[MAX_DIM];
             for( int iter = 0; iter < 100; iter++ )
             {
-                //ts->printf(cvtest::TS::LOG, ".");
-
-                ts->update_context(this, iter, true);
-                int k, dims = rng.uniform(1, MAX_DIM+1), p = 1;
+                int dims = rng.uniform(1, MAX_DIM+1);
                 int depth = rng.uniform(CV_8U, CV_64F+1);
                 int cn = rng.uniform(1, 6);
                 int type = CV_MAKETYPE(depth, cn);
-                int op = rng.uniform(0, 5);
+                int op = rng.uniform(0, depth < CV_32F ? 5 : 2); // don't run binary operations between floating-point values
                 int depth1 = op <= 1 ? CV_64F : depth;
-                for( k = 0; k < dims; k++ )
+                for (int k = 0; k < MAX_DIM; k++)
                 {
-                    sizes[k] = rng.uniform(1, 30);
-                    p *= sizes[k];
+                    sizes[k] = k < dims ? rng.uniform(1, 30) : 0;
                 }
+                SCOPED_TRACE(cv::format("iter=%d dims=%d depth=%d cn=%d type=%d op=%d depth1=%d dims=[%d; %d; %d]",
+                                         iter,   dims,   depth,   cn,   type,   op,   depth1, sizes[0], sizes[1], sizes[2]));
+
                 Mat a(dims, sizes, type), a1;
                 Mat b(dims, sizes, type), b1;
                 Mat mask(dims, sizes, CV_8U);
@@ -1500,7 +1549,7 @@ protected:
                 }
                 Mat d1;
                 d.convertTo(d1, depth);
-                CV_Assert( cvtest::norm(c, d1, CV_C) <= DBL_EPSILON );
+                EXPECT_LE(cvtest::norm(c, d1, CV_C), DBL_EPSILON);
             }
 
             Mat_<uchar> tmpSrc(100,100);
@@ -1510,15 +1559,7 @@ protected:
             Mat_<uchar> tmpDst(100,100);
             tmpDst = 2;
             tmpSrc.copyTo(tmpDst,tmpMask);
-        }
-        catch(...)
-        {
-           ts->set_failed_test_info(cvtest::TS::FAIL_MISMATCH);
-        }
-    }
-};
-
-TEST(Core_ArithmMask, uninitialized) { CV_ArithmMaskTest test; test.safe_run(); }
+}
 
 TEST(Multiply, FloatingPointRounding)
 {
@@ -1850,6 +1891,118 @@ TEST(MinMaxLoc, regression_4955_nans)
     cv::Mat one_mat(2, 2, CV_32F, cv::Scalar(1));
     cv::minMaxLoc(one_mat, NULL, NULL, NULL, NULL);
 
-    cv::Mat nan_mat(2, 2, CV_32F, cv::Scalar(NAN));
+    cv::Mat nan_mat(2, 2, CV_32F, cv::Scalar(std::numeric_limits<float>::quiet_NaN()));
     cv::minMaxLoc(nan_mat, NULL, NULL, NULL, NULL);
+}
+
+TEST(Subtract, scalarc1_matc3)
+{
+    int scalar = 255;
+    cv::Mat srcImage(5, 5, CV_8UC3, cv::Scalar::all(5)), destImage;
+    cv::subtract(scalar, srcImage, destImage);
+
+    ASSERT_EQ(0, cv::norm(cv::Mat(5, 5, CV_8UC3, cv::Scalar::all(250)), destImage, cv::NORM_INF));
+}
+
+TEST(Subtract, scalarc4_matc4)
+{
+    cv::Scalar sc(255, 255, 255, 255);
+    cv::Mat srcImage(5, 5, CV_8UC4, cv::Scalar::all(5)), destImage;
+    cv::subtract(sc, srcImage, destImage);
+
+    ASSERT_EQ(0, cv::norm(cv::Mat(5, 5, CV_8UC4, cv::Scalar::all(250)), destImage, cv::NORM_INF));
+}
+
+TEST(Compare, empty)
+{
+    cv::Mat temp, dst1, dst2;
+    cv::compare(temp, temp, dst1, cv::CMP_EQ);
+    dst2 = temp > 5;
+
+    EXPECT_TRUE(dst1.empty());
+    EXPECT_TRUE(dst2.empty());
+}
+
+TEST(Compare, regression_8999)
+{
+    Mat_<double> A(4,1); A << 1, 3, 2, 4;
+    Mat_<double> B(1,1); B << 2;
+    Mat C;
+    ASSERT_ANY_THROW({
+                        compare(A, B, C, CMP_LT);
+                     });
+}
+
+
+TEST(Core_minMaxIdx, regression_9207_1)
+{
+    const int rows = 4;
+    const int cols = 3;
+    uchar mask_[rows*cols] = {
+ 255, 255, 255,
+ 255,   0, 255,
+   0, 255, 255,
+   0,   0, 255
+};
+    uchar src_[rows*cols] = {
+   1,   1,   1,
+   1,   1,   1,
+   2,   1,   1,
+   2,   2,   1
+};
+    Mat mask(Size(cols, rows), CV_8UC1, mask_);
+    Mat src(Size(cols, rows), CV_8UC1, src_);
+    double minVal = -0.0, maxVal = -0.0;
+    int minIdx[2] = { -2, -2 }, maxIdx[2] = { -2, -2 };
+    minMaxIdx(src, &minVal, &maxVal, minIdx, maxIdx, mask);
+    EXPECT_EQ(0, minIdx[0]);
+    EXPECT_EQ(0, minIdx[1]);
+    EXPECT_EQ(0, maxIdx[0]);
+    EXPECT_EQ(0, maxIdx[1]);
+}
+
+
+TEST(Core_minMaxIdx, regression_9207_2)
+{
+    const int rows = 13;
+    const int cols = 15;
+    uchar mask_[rows*cols] = {
+   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0, 255,
+   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0, 255,
+   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0, 255,
+   0, 255, 255, 255, 255,   0,   0,   0,   0,   0,   0,   0,   0,   0, 255,
+ 255,   0,   0,   0,   0, 255,   0,   0,   0,   0,   0,   0,   0,   0, 255,
+ 255,   0,   0,   0,   0,   0, 255,   0,   0,   0,   0,   0,   0, 255, 255,
+ 255,   0,   0,   0,   0,   0,   0, 255, 255,   0,   0, 255, 255, 255,   0,
+ 255,   0,   0,   0,   0,   0,   0,   0,   0, 255, 255, 255,   0, 255,   0,
+ 255,   0,   0,   0,   0,   0,   0, 255, 255,   0,   0,   0, 255, 255,   0,
+ 255,   0,   0,   0,   0,   0, 255,   0,   0,   0,   0,   0,   0, 255,   0,
+ 255,   0,   0,   0,   0, 255,   0,   0,   0,   0,   0,   0,   0,   0,   0,
+   0, 255,   0,   0,   0, 255,   0,   0,   0,   0,   0,   0,   0,   0,   0,
+   0, 255, 255, 255, 255,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0
+};
+    uchar src_[15*13] = {
+   5,   5,   5,   5,   5,   6,   5,   2,   0,   4,   6,   6,   4,   1,   0,
+   6,   5,   4,   4,   5,   6,   6,   5,   2,   0,   4,   6,   5,   2,   0,
+   3,   2,   1,   1,   2,   4,   6,   6,   4,   2,   3,   4,   4,   2,   0,
+   1,   0,   0,   0,   0,   1,   4,   5,   4,   4,   4,   4,   3,   2,   0,
+   0,   0,   0,   0,   0,   0,   2,   3,   4,   4,   4,   3,   2,   1,   0,
+   0,   0,   0,   0,   0,   0,   0,   2,   3,   4,   3,   2,   1,   0,   0,
+   0,   0,   0,   0,   0,   0,   0,   0,   0,   1,   1,   0,   0,   0,   1,
+   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   1,
+   0,   0,   0,   0,   0,   0,   0,   0,   0,   1,   1,   1,   0,   0,   1,
+   0,   0,   0,   0,   0,   0,   0,   1,   2,   4,   3,   3,   1,   0,   1,
+   0,   0,   0,   0,   0,   0,   1,   4,   5,   6,   5,   4,   3,   2,   0,
+   1,   0,   0,   0,   0,   0,   3,   5,   5,   4,   3,   4,   4,   3,   0,
+   2,   0,   0,   0,   0,   2,   5,   6,   5,   2,   2,   5,   4,   3,   0
+};
+    Mat mask(Size(cols, rows), CV_8UC1, mask_);
+    Mat src(Size(cols, rows), CV_8UC1, src_);
+    double minVal = -0.0, maxVal = -0.0;
+    int minIdx[2] = { -2, -2 }, maxIdx[2] = { -2, -2 };
+    minMaxIdx(src, &minVal, &maxVal, minIdx, maxIdx, mask);
+    EXPECT_EQ(0, minIdx[0]);
+    EXPECT_EQ(14, minIdx[1]);
+    EXPECT_EQ(0, maxIdx[0]);
+    EXPECT_EQ(14, maxIdx[1]);
 }

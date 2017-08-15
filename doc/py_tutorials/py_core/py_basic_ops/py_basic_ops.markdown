@@ -8,7 +8,7 @@ Learn to:
 
 -   Access pixel values and modify them
 -   Access image properties
--   Setting Region of Image (ROI)
+-   Setting Region of Interest (ROI)
 -   Splitting and Merging images
 
 Almost all the operations in this section is mainly related to Numpy rather than OpenCV. A good
@@ -30,18 +30,18 @@ You can access a pixel value by its row and column coordinates. For BGR image, i
 of Blue, Green, Red values. For grayscale image, just corresponding intensity is returned.
 @code{.py}
 >>> px = img[100,100]
->>> print px
+>>> print( px )
 [157 166 200]
 
 # accessing only blue pixel
 >>> blue = img[100,100,0]
->>> print blue
+>>> print( blue )
 157
 @endcode
 You can modify the pixel values the same way.
 @code{.py}
 >>> img[100,100] = [255,255,255]
->>> print img[100,100]
+>>> print( img[100,100] )
 [255 255 255]
 @endcode
 
@@ -76,7 +76,7 @@ etc.
 Shape of image is accessed by img.shape. It returns a tuple of number of rows, columns and channels
 (if image is color):
 @code{.py}
->>> print img.shape
+>>> print( img.shape )
 (342, 548, 3)
 @endcode
 
@@ -85,12 +85,12 @@ good method to check if loaded image is grayscale or color image.
 
 Total number of pixels is accessed by `img.size`:
 @code{.py}
->>> print img.size
+>>> print( img.size )
 562248
 @endcode
 Image datatype is obtained by \`img.dtype\`:
 @code{.py}
->>> print img.dtype
+>>> print( img.dtype )
 uint8
 @endcode
 
@@ -173,7 +173,7 @@ from matplotlib import pyplot as plt
 
 BLUE = [255,0,0]
 
-img1 = cv2.imread('opencv_logo.png')
+img1 = cv2.imread('opencv-logo.png')
 
 replicate = cv2.copyMakeBorder(img1,10,10,10,10,cv2.BORDER_REPLICATE)
 reflect = cv2.copyMakeBorder(img1,10,10,10,10,cv2.BORDER_REFLECT)

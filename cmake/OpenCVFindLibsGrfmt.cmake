@@ -96,17 +96,23 @@ if(WITH_WEBP)
     ocv_clear_vars(WEBP_FOUND WEBP_LIBRARY WEBP_LIBRARIES WEBP_INCLUDE_DIR)
   else()
     include(cmake/OpenCVFindWebP.cmake)
+    if(WEBP_FOUND)
+      set(HAVE_WEBP 1)
+    endif()
   endif()
 endif()
 
 # --- Add libwebp to 3rdparty/libwebp and compile it if not available ---
-if(WITH_WEBP AND NOT WEBP_FOUND)
+if(WITH_WEBP AND NOT WEBP_FOUND
+    AND (NOT ANDROID OR HAVE_CPUFEATURES)
+)
 
   set(WEBP_LIBRARY libwebp)
   set(WEBP_LIBRARIES ${WEBP_LIBRARY})
 
   add_subdirectory("${OpenCV_SOURCE_DIR}/3rdparty/libwebp")
   set(WEBP_INCLUDE_DIR "${${WEBP_LIBRARY}_SOURCE_DIR}")
+  set(HAVE_WEBP 1)
 endif()
 
 if(NOT WEBP_VERSION AND WEBP_INCLUDE_DIR)
@@ -202,7 +208,7 @@ endif()
 
 # --- GDAL (optional) ---
 if(WITH_GDAL)
-    find_package(GDAL)
+    find_package(GDAL QUIET)
 
     if(NOT GDAL_FOUND)
         ocv_clear_vars(GDAL_LIBRARY GDAL_INCLUDE_DIR)
@@ -211,4 +217,16 @@ if(WITH_GDAL)
         set(HAVE_GDAL YES)
         ocv_include_directories(${GDAL_INCLUDE_DIR})
     endif()
+endif()
+
+if (WITH_GDCM)
+  find_package(GDCM QUIET)
+  if(NOT GDCM_FOUND)
+    set(HAVE_GDCM NO)
+    ocv_clear_vars(GDCM_VERSION GDCM_LIBRARIES)
+  else()
+    set(HAVE_GDCM YES)
+    # include(${GDCM_USE_FILE})
+    set(GDCM_LIBRARIES gdcmMSFF) # GDCM does not set this variable for some reason
+  endif()
 endif()

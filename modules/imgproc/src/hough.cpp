@@ -96,7 +96,7 @@ HoughLinesStandard( const Mat& img, float rho, float theta,
     int numangle = cvRound((max_theta - min_theta) / theta);
     int numrho = cvRound(((width + height) * 2 + 1) / rho);
 
-#if defined HAVE_IPP && !defined(HAVE_IPP_ICV_ONLY) && IPP_VERSION_X100 >= 810 && IPP_DISABLE_BLOCK
+#if defined HAVE_IPP && IPP_VERSION_X100 >= 810 && !IPP_DISABLE_HOUGH
     CV_IPP_CHECK()
     {
         IppiSize srcSize = { width, height };
@@ -108,8 +108,8 @@ HoughLinesStandard( const Mat& img, float rho, float theta,
         int linesCount = 0;
         lines.resize(ipp_linesMax);
         IppStatus ok = ippiHoughLineGetSize_8u_C1R(srcSize, delta, ipp_linesMax, &bufferSize);
-        Ipp8u* buffer = ippsMalloc_8u(bufferSize);
-        if (ok >= 0) ok = ippiHoughLine_Region_8u32f_C1R(image, step, srcSize, (IppPointPolar*) &lines[0], dstRoi, ipp_linesMax, &linesCount, delta, threshold, buffer);
+        Ipp8u* buffer = ippsMalloc_8u_L(bufferSize);
+        if (ok >= 0) {ok = CV_INSTRUMENT_FUN_IPP(ippiHoughLine_Region_8u32f_C1R, image, step, srcSize, (IppPointPolar*) &lines[0], dstRoi, ipp_linesMax, &linesCount, delta, threshold, buffer);};
         ippsFree(buffer);
         if (ok >= 0)
         {
@@ -429,7 +429,7 @@ HoughLinesProbabilistic( Mat& image,
     int numangle = cvRound(CV_PI / theta);
     int numrho = cvRound(((width + height) * 2 + 1) / rho);
 
-#if defined HAVE_IPP && !defined(HAVE_IPP_ICV_ONLY) && IPP_VERSION_X100 >= 810 && IPP_DISABLE_BLOCK
+#if defined HAVE_IPP && IPP_VERSION_X100 >= 810 && !IPP_DISABLE_HOUGH
     CV_IPP_CHECK()
     {
         IppiSize srcSize = { width, height };
@@ -440,12 +440,12 @@ HoughLinesProbabilistic( Mat& image,
         int linesCount = 0;
         lines.resize(ipp_linesMax);
         IppStatus ok = ippiHoughProbLineGetSize_8u_C1R(srcSize, delta, &specSize, &bufferSize);
-        Ipp8u* buffer = ippsMalloc_8u(bufferSize);
-        pSpec = (IppiHoughProbSpec*) malloc(specSize);
+        Ipp8u* buffer = ippsMalloc_8u_L(bufferSize);
+        pSpec = (IppiHoughProbSpec*) ippsMalloc_8u_L(specSize);
         if (ok >= 0) ok = ippiHoughProbLineInit_8u32f_C1R(srcSize, delta, ippAlgHintNone, pSpec);
-        if (ok >= 0) ok = ippiHoughProbLine_8u32f_C1R(image.data, image.step, srcSize, threshold, lineLength, lineGap, (IppiPoint*) &lines[0], ipp_linesMax, &linesCount, buffer, pSpec);
+        if (ok >= 0) {ok = CV_INSTRUMENT_FUN_IPP(ippiHoughProbLine_8u32f_C1R, image.data, (int)image.step, srcSize, threshold, lineLength, lineGap, (IppiPoint*) &lines[0], ipp_linesMax, &linesCount, buffer, pSpec);};
 
-        free(pSpec);
+        ippsFree(pSpec);
         ippsFree(buffer);
         if (ok >= 0)
         {
@@ -850,6 +850,8 @@ void cv::HoughLines( InputArray _image, OutputArray _lines,
                     double rho, double theta, int threshold,
                     double srn, double stn, double min_theta, double max_theta )
 {
+    CV_INSTRUMENT_REGION()
+
     CV_OCL_RUN(srn == 0 && stn == 0 && _image.isUMat() && _lines.isUMat(),
                ocl_HoughLines(_image, _lines, rho, theta, threshold, min_theta, max_theta));
 
@@ -869,6 +871,8 @@ void cv::HoughLinesP(InputArray _image, OutputArray _lines,
                      double rho, double theta, int threshold,
                      double minLineLength, double maxGap )
 {
+    CV_INSTRUMENT_REGION()
+
     CV_OCL_RUN(_image.isUMat() && _lines.isUMat(),
                ocl_HoughLinesP(_image, _lines, rho, theta, threshold, minLineLength, maxGap));
 
@@ -890,7 +894,6 @@ cvHoughLines2( CvArr* src_image, void* lineStorage, int method,
     cv::Mat image = cv::cvarrToMat(src_image);
     std::vector<cv::Vec2f> l2;
     std::vector<cv::Vec4i> l4;
-    CvSeq* result = 0;
 
     CvMat* mat = 0;
     CvSeq* lines = 0;
@@ -917,11 +920,13 @@ cvHoughLines2( CvArr* src_image, void* lineStorage, int method,
         elemSize = sizeof(int)*4;
     }
 
-    if( CV_IS_STORAGE( lineStorage ))
+    bool isStorage = isStorageOrMat(lineStorage);
+
+    if( isStorage )
     {
         lines = cvCreateSeq( lineType, sizeof(CvSeq), elemSize, (CvMemStorage*)lineStorage );
     }
-    else if( CV_IS_MAT( lineStorage ))
+    else
     {
         mat = (CvMat*)lineStorage;
 
@@ -938,8 +943,6 @@ cvHoughLines2( CvArr* src_image, void* lineStorage, int method,
         linesMax = lines->total;
         cvClearSeq( lines );
     }
-    else
-        CV_Error( CV_StsBadArg, "Destination is not CvMemStorage* nor CvMat*" );
 
     iparam1 = cvRound(param1);
     iparam2 = cvRound(param2);
@@ -964,7 +967,7 @@ cvHoughLines2( CvArr* src_image, void* lineStorage, int method,
 
     int nlines = (int)(l2.size() + l4.size());
 
-    if( mat )
+    if( !isStorage )
     {
         if( mat->cols > mat->rows )
             mat->cols = nlines;
@@ -977,20 +980,20 @@ cvHoughLines2( CvArr* src_image, void* lineStorage, int method,
         cv::Mat lx = method == CV_HOUGH_STANDARD || method == CV_HOUGH_MULTI_SCALE ?
             cv::Mat(nlines, 1, CV_32FC2, &l2[0]) : cv::Mat(nlines, 1, CV_32SC4, &l4[0]);
 
-        if( mat )
+        if (isStorage)
+        {
+            cvSeqPushMulti(lines, lx.ptr(), nlines);
+        }
+        else
         {
             cv::Mat dst(nlines, 1, lx.type(), mat->data.ptr);
             lx.copyTo(dst);
         }
-        else
-        {
-            cvSeqPushMulti(lines, lx.ptr(), nlines);
-        }
     }
 
-    if( !mat )
-        result = lines;
-    return result;
+    if( isStorage )
+        return lines;
+    return 0;
 }
 
 
@@ -1223,8 +1226,6 @@ cvHoughCircles( CvArr* src_image, void* circle_storage,
                 double param1, double param2,
                 int min_radius, int max_radius )
 {
-    CvSeq* result = 0;
-
     CvMat stub, *img = (CvMat*)src_image;
     CvMat* mat = 0;
     CvSeq* circles = 0;
@@ -1251,12 +1252,14 @@ cvHoughCircles( CvArr* src_image, void* circle_storage,
     else if( max_radius <= min_radius )
         max_radius = min_radius + 2;
 
-    if( CV_IS_STORAGE( circle_storage ))
+    bool isStorage = isStorageOrMat(circle_storage);
+
+    if(isStorage)
     {
         circles = cvCreateSeq( CV_32FC3, sizeof(CvSeq),
             sizeof(float)*3, (CvMemStorage*)circle_storage );
     }
-    else if( CV_IS_MAT( circle_storage ))
+    else
     {
         mat = (CvMat*)circle_storage;
 
@@ -1270,8 +1273,6 @@ cvHoughCircles( CvArr* src_image, void* circle_storage,
         circles_max = circles->total;
         cvClearSeq( circles );
     }
-    else
-        CV_Error( CV_StsBadArg, "Destination is not CvMemStorage* nor CvMat*" );
 
     switch( method )
     {
@@ -1284,17 +1285,17 @@ cvHoughCircles( CvArr* src_image, void* circle_storage,
         CV_Error( CV_StsBadArg, "Unrecognized method id" );
     }
 
-    if( mat )
+    if (isStorage)
+        return circles;
+    else
     {
         if( mat->cols > mat->rows )
             mat->cols = circles->total;
         else
             mat->rows = circles->total;
     }
-    else
-        result = circles;
 
-    return result;
+    return 0;
 }
 
 
@@ -1322,6 +1323,8 @@ void cv::HoughCircles( InputArray _image, OutputArray _circles,
                        double param1, double param2,
                        int minRadius, int maxRadius )
 {
+    CV_INSTRUMENT_REGION()
+
     Ptr<CvMemStorage> storage(cvCreateMemStorage(STORAGE_SIZE));
     Mat image = _image.getMat();
     CvMat c_image = image;

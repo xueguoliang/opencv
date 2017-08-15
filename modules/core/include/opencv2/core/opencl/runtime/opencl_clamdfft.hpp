@@ -39,13 +39,13 @@
 //
 //M*/
 
-#ifndef __OPENCV_CORE_OCL_RUNTIME_CLAMDFFT_HPP__
-#define __OPENCV_CORE_OCL_RUNTIME_CLAMDFFT_HPP__
+#ifndef OPENCV_CORE_OCL_RUNTIME_CLAMDFFT_HPP
+#define OPENCV_CORE_OCL_RUNTIME_CLAMDFFT_HPP
 
 #ifdef HAVE_CLAMDFFT
 
 #ifndef CL_RUNTIME_EXPORT
-#if (defined(BUILD_SHARED_LIBS) || defined(OPENCV_CORE_SHARED)) && (defined WIN32 || defined _WIN32 || defined WINCE)
+#if (defined(BUILD_SHARED_LIBS) || defined(OPENCV_CORE_SHARED)) && (defined _WIN32 || defined WINCE)
 #define CL_RUNTIME_EXPORT __declspec(dllimport)
 #else
 #define CL_RUNTIME_EXPORT
@@ -56,4 +56,4 @@
 
 #endif // HAVE_CLAMDFFT
 
-#endif // __OPENCV_CORE_OCL_RUNTIME_CLAMDFFT_HPP__
+#endif // OPENCV_CORE_OCL_RUNTIME_CLAMDFFT_HPP

@@ -162,7 +162,7 @@ void VoronoiSeamFinder::findInPair(size_t first, size_t second, Rect roi)
 }
 
 
-DpSeamFinder::DpSeamFinder(CostFunction costFunc) : costFunc_(costFunc) {}
+DpSeamFinder::DpSeamFinder(CostFunction costFunc) : costFunc_(costFunc), ncomps_(0) {}
 
 
 void DpSeamFinder::find(const std::vector<UMat> &src, const std::vector<Point> &corners, std::vector<UMat> &masks)
@@ -203,6 +203,8 @@ void DpSeamFinder::process(
         const Mat &image1, const Mat &image2, Point tl1, Point tl2,
         Mat &mask1, Mat &mask2)
 {
+    CV_INSTRUMENT_REGION()
+
     CV_Assert(image1.size() == mask1.size());
     CV_Assert(image2.size() == mask2.size());
 
@@ -638,7 +640,7 @@ bool DpSeamFinder::getSeamTips(int comp1, int comp2, Point &p1, Point &p2)
         {
             double size1 = static_cast<double>(points[i].size()), size2 = static_cast<double>(points[j].size());
             double cx1 = cvRound(sum[i].x / size1), cy1 = cvRound(sum[i].y / size1);
-            double cx2 = cvRound(sum[j].x / size2), cy2 = cvRound(sum[j].y / size1);
+            double cx2 = cvRound(sum[j].x / size2), cy2 = cvRound(sum[j].y / size2);
 
             double dist = (cx1 - cx2) * (cx1 - cx2) + (cy1 - cy2) * (cy1 - cy2);
             if (dist > maxDist)

@@ -94,6 +94,9 @@ PxMDecoder::PxMDecoder()
 {
     m_offset = -1;
     m_buf_supported = true;
+    m_bpp = 0;
+    m_binary = false;
+    m_maxval = 0;
 }
 
 
@@ -309,7 +312,7 @@ bool  PxMDecoder::readData( Mat& img )
                         }
                     }
                     else
-                        memcpy( data, src, m_width);
+                        memcpy( data, src, CV_ELEM_SIZE1(m_type)*m_width);
                 }
                 else
                 {

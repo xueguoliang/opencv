@@ -71,7 +71,7 @@ def deskew(img):
 
 class StatModel(object):
     def load(self, fn):
-        self.model.load(fn)  # Known bug: https://github.com/Itseez/opencv/issues/4969
+        self.model.load(fn)  # Known bug: https://github.com/opencv/opencv/issues/4969
     def save(self, fn):
         self.model.save(fn)
 
@@ -109,7 +109,7 @@ def evaluate_model(model, digits, samples, labels):
 
     confusion = np.zeros((10, 10), np.int32)
     for i, j in zip(labels, resp):
-        confusion[i, j] += 1
+        confusion[i, int(j)] += 1
     print('confusion matrix:')
     print(confusion)
     print()

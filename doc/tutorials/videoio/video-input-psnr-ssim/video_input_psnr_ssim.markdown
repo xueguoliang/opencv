@@ -20,8 +20,8 @@ As a test case where to show off these using OpenCV I've created a small program
 video files and performs a similarity check between them. This is something you could use to check
 just how well a new video compressing algorithms works. Let there be a reference (original) video
 like [this small Megamind clip
-](https://github.com/Itseez/opencv/tree/master/samples/data/Megamind.avi) and [a compressed
-version of it ](https://github.com/Itseez/opencv/tree/master/samples/data/Megamind_bugy.avi).
+](https://github.com/opencv/opencv/tree/master/samples/data/Megamind.avi) and [a compressed
+version of it ](https://github.com/opencv/opencv/tree/master/samples/data/Megamind_bugy.avi).
 You may also find the source code and these video file in the
 `samples/data` folder of the OpenCV source library.
 
@@ -133,7 +133,7 @@ Then the PSNR is expressed as:
 
 \f[PSNR = 10 \cdot \log_{10} \left( \frac{MAX_I^2}{MSE} \right)\f]
 
-Here the \f$MAX_I^2\f$ is the maximum valid value for a pixel. In case of the simple single byte image
+Here the \f$MAX_I\f$ is the maximum valid value for a pixel. In case of the simple single byte image
 per pixel per channel this is 255. When two images are the same the MSE will give zero, resulting in
 an invalid divide by zero operation in the PSNR formula. In this case the PSNR is undefined and as
 we'll need to handle this case separately. The transition to a logarithmic scale is made because the

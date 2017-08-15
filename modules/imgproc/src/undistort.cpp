@@ -42,6 +42,7 @@
 
 #include "precomp.hpp"
 #include "opencv2/imgproc/detail/distortion_model.hpp"
+#include "undistort.hpp"
 
 cv::Mat cv::getDefaultNewCameraMatrix( InputArray _cameraMatrix, Size imgsize,
                                bool centerPrincipalPoint )
@@ -136,6 +137,10 @@ void cv::initUndistortRectifyMap( InputArray _cameraMatrix, InputArray _distCoef
     cv::Matx33d matTilt = cv::Matx33d::eye();
     cv::detail::computeTiltProjectionMatrix(tauX, tauY, &matTilt);
 
+#if CV_TRY_AVX2
+    bool USE_AVX2 = cv::checkHardwareSupport(CV_CPU_AVX2);
+#endif
+
     for( int i = 0; i < size.height; i++ )
     {
         float* m1f = map1.ptr<float>(i);
@@ -144,7 +149,21 @@ void cv::initUndistortRectifyMap( InputArray _cameraMatrix, InputArray _distCoef
         ushort* m2 = (ushort*)m2f;
         double _x = i*ir[1] + ir[2], _y = i*ir[4] + ir[5], _w = i*ir[7] + ir[8];
 
-        for( int j = 0; j < size.width; j++, _x += ir[0], _y += ir[3], _w += ir[6] )
+        int j = 0;
+
+        if (m1type == CV_16SC2)
+            CV_Assert(m1 != NULL && m2 != NULL);
+        else if (m1type == CV_32FC1)
+            CV_Assert(m1f != NULL && m2f != NULL);
+        else
+            CV_Assert(m1 != NULL);
+
+#if CV_TRY_AVX2
+        if( USE_AVX2 )
+            j = cv::initUndistortRectifyMapLine_AVX(m1f, m2f, m1, m2, matTilt.val, ir, _x, _y, _w, size.width, m1type,
+                                                    k1, k2, k3, k4, k5, k6, p1, p2, s1, s2, s3, s4, u0, v0, fx, fy);
+#endif
+        for( ; j < size.width; j++, _x += ir[0], _y += ir[3], _w += ir[6] )
         {
             double w = 1./_w, x = _x*w, y = _y*w;
             double x2 = x*x, y2 = y*y;
@@ -182,6 +201,8 @@ void cv::initUndistortRectifyMap( InputArray _cameraMatrix, InputArray _distCoef
 void cv::undistort( InputArray _src, OutputArray _dst, InputArray _cameraMatrix,
                     InputArray _distCoeffs, InputArray _newCameraMatrix )
 {
+    CV_INSTRUMENT_REGION()
+
     Mat src = _src.getMat(), cameraMatrix = _cameraMatrix.getMat();
     Mat distCoeffs = _distCoeffs.getMat(), newCameraMatrix = _newCameraMatrix.getMat();
 
@@ -278,16 +299,9 @@ void cvUndistortPoints( const CvMat* _src, CvMat* _dst, const CvMat* _cameraMatr
                    const CvMat* _distCoeffs,
                    const CvMat* matR, const CvMat* matP )
 {
-    double A[3][3], RR[3][3], k[14]={0,0,0,0,0,0,0,0,0,0,0,0,0,0}, fx, fy, ifx, ify, cx, cy;
+    double A[3][3], RR[3][3], k[14]={0,0,0,0,0,0,0,0,0,0,0,0,0,0};
     CvMat matA=cvMat(3, 3, CV_64F, A), _Dk;
     CvMat _RR=cvMat(3, 3, CV_64F, RR);
-    const CvPoint2D32f* srcf;
-    const CvPoint2D64f* srcd;
-    CvPoint2D32f* dstf;
-    CvPoint2D64f* dstd;
-    int stype, dtype;
-    int sstep, dstep;
-    int i, j, n, iters = 1;
     cv::Matx33d invMatTilt = cv::Matx33d::eye();
 
     CV_Assert( CV_IS_MAT(_src) && CV_IS_MAT(_dst) &&
@@ -301,6 +315,8 @@ void cvUndistortPoints( const CvMat* _src, CvMat* _dst, const CvMat* _cameraMatr
         _cameraMatrix->rows == 3 && _cameraMatrix->cols == 3 );
 
     cvConvert( _cameraMatrix, &matA );
+
+    int iters = 0;
 
     if( _distCoeffs )
     {
@@ -338,27 +354,26 @@ void cvUndistortPoints( const CvMat* _src, CvMat* _dst, const CvMat* _cameraMatr
         cvMatMul( &_PP, &_RR, &_RR );
     }
 
-    srcf = (const CvPoint2D32f*)_src->data.ptr;
-    srcd = (const CvPoint2D64f*)_src->data.ptr;
-    dstf = (CvPoint2D32f*)_dst->data.ptr;
-    dstd = (CvPoint2D64f*)_dst->data.ptr;
-    stype = CV_MAT_TYPE(_src->type);
-    dtype = CV_MAT_TYPE(_dst->type);
-    sstep = _src->rows == 1 ? 1 : _src->step/CV_ELEM_SIZE(stype);
-    dstep = _dst->rows == 1 ? 1 : _dst->step/CV_ELEM_SIZE(dtype);
+    const CvPoint2D32f* srcf = (const CvPoint2D32f*)_src->data.ptr;
+    const CvPoint2D64f* srcd = (const CvPoint2D64f*)_src->data.ptr;
+    CvPoint2D32f* dstf = (CvPoint2D32f*)_dst->data.ptr;
+    CvPoint2D64f* dstd = (CvPoint2D64f*)_dst->data.ptr;
+    int stype = CV_MAT_TYPE(_src->type);
+    int dtype = CV_MAT_TYPE(_dst->type);
+    int sstep = _src->rows == 1 ? 1 : _src->step/CV_ELEM_SIZE(stype);
+    int dstep = _dst->rows == 1 ? 1 : _dst->step/CV_ELEM_SIZE(dtype);
 
-    n = _src->rows + _src->cols - 1;
+    double fx = A[0][0];
+    double fy = A[1][1];
+    double ifx = 1./fx;
+    double ify = 1./fy;
+    double cx = A[0][2];
+    double cy = A[1][2];
 
-    fx = A[0][0];
-    fy = A[1][1];
-    ifx = 1./fx;
-    ify = 1./fy;
-    cx = A[0][2];
-    cy = A[1][2];
-
-    for( i = 0; i < n; i++ )
+    int n = _src->rows + _src->cols - 1;
+    for( int i = 0; i < n; i++ )
     {
-        double x, y, x0, y0;
+        double x, y, x0 = 0, y0 = 0;
         if( stype == CV_32FC2 )
         {
             x = srcf[i*sstep].x;
@@ -373,14 +388,16 @@ void cvUndistortPoints( const CvMat* _src, CvMat* _dst, const CvMat* _cameraMatr
         x = (x - cx)*ifx;
         y = (y - cy)*ify;
 
-        // compensate tilt distortion
-        cv::Vec3d vecUntilt = invMatTilt * cv::Vec3d(x, y, 1);
-        double invProj = vecUntilt(2) ? 1./vecUntilt(2) : 1;
-        x0 = x = invProj * vecUntilt(0);
-        y0 = y = invProj * vecUntilt(1);
+        if( iters ) {
+            // compensate tilt distortion
+            cv::Vec3d vecUntilt = invMatTilt * cv::Vec3d(x, y, 1);
+            double invProj = vecUntilt(2) ? 1./vecUntilt(2) : 1;
+            x0 = x = invProj * vecUntilt(0);
+            y0 = y = invProj * vecUntilt(1);
+        }
 
         // compensate distortion iteratively
-        for( j = 0; j < iters; j++ )
+        for( int j = 0; j < iters; j++ )
         {
             double r2 = x*x + y*y;
             double icdist = (1 + ((k[7]*r2 + k[6])*r2 + k[5])*r2)/(1 + ((k[4]*r2 + k[1])*r2 + k[0])*r2);
@@ -478,8 +495,6 @@ static Point2f mapPointSpherical(const Point2f& p, float alpha, Vec4d* J, int pr
 
 static Point2f invMapPointSpherical(Point2f _p, float alpha, int projType)
 {
-    static int avgiter = 0, avgn = 0;
-
     double eps = 1e-12;
     Vec2d p(_p.x, _p.y), q(_p.x, _p.y), err;
     Vec4d J;
@@ -502,14 +517,6 @@ static Point2f invMapPointSpherical(Point2f _p, float alpha, int projType)
         q -= Vec2d(iJtJ[0]*JtErr[0] + iJtJ[1]*JtErr[1], iJtJ[2]*JtErr[0] + iJtJ[3]*JtErr[1]);
         //Matx22d J(kx*x + k, kx*y, ky*x, ky*y + k);
         //q -= Vec2d((J.t()*J).inv()*(J.t()*err));
-    }
-
-    if( i < maxiter )
-    {
-        avgiter += i;
-        avgn++;
-        if( avgn == 1500 )
-            printf("avg iters = %g\n", (double)avgiter/avgn);
     }
 
     return i < maxiter ? Point2f((float)q[0], (float)q[1]) : Point2f(-FLT_MAX, -FLT_MAX);

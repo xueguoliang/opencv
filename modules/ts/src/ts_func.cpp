@@ -2947,9 +2947,9 @@ MatComparator::operator()(const char* expr1, const char* expr2,
     return ::testing::AssertionFailure()
     << "too big relative difference (" << realmaxdiff << " > "
     << maxdiff << ") between "
-    << MatInfo(m1) << " '" << expr1 << "' and '" << expr2 << "' at " << Mat(loc0) << ".\n\n"
-    << "'" << expr1 << "': " << MatPart(m1part, border > 0 ? &loc : 0) << ".\n\n"
-    << "'" << expr2 << "': " << MatPart(m2part, border > 0 ? &loc : 0) << ".\n";
+    << MatInfo(m1) << " '" << expr1 << "' and '" << expr2 << "' at " << Mat(loc0).t() << ".\n"
+    << "- " << expr1 << ":\n" << MatPart(m1part, border > 0 ? &loc : 0) << ".\n"
+    << "- " << expr2 << ":\n" << MatPart(m2part, border > 0 ? &loc : 0) << ".\n";
 }
 
 void printVersionInfo(bool useStdOut)
@@ -3063,6 +3063,9 @@ void printVersionInfo(bool useStdOut)
 #endif
 #if CV_NEON
     if (checkHardwareSupport(CV_CPU_NEON)) cpu_features += " neon";
+#endif
+#if CV_FP16
+    if (checkHardwareSupport(CV_CPU_FP16)) cpu_features += " fp16";
 #endif
 
     cpu_features.erase(0, 1); // erase initial space
